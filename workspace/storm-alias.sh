@@ -28,19 +28,24 @@ prerequisites-download() {
     wget https://github.com/ths-rwth/carl/archive/refs/heads/master14.zip -O carl.zip
     wget https://github.com/moves-rwth/pycarl/archive/refs/tags/2.0.5.zip -O pycarl.zip
     wget https://github.com/cvc5/cvc5/archive/refs/tags/cvc5-0.0.6.zip -O cvc5.zip
+    # TODO: use original SWITSS repo after merge request
+    wget https://github.com/JakubFrejlach/switss/archive/refs/heads/paynt-integration.zip -O switss.zip
     # wget https://github.com/moves-rwth/storm/archive/refs/tags/1.6.4.zip -O storm.zip
     # wget https://github.com/moves-rwth/stormpy/archive/refs/tags/1.6.4.zip -O stormpy.zip
     cd -
 }
 
 prerequisites-prepare() {
-    cd $PREREQUISITES    
+    cd $PREREQUISITES
     unzip $DOWNLOADS/carl.zip
     mv carl-master14 carl
     unzip $DOWNLOADS/pycarl.zip
     mv pycarl-2.0.5 pycarl
     unzip $DOWNLOADS/cvc5.zip
     mv cvc5-cvc5-0.0.6 cvc5
+    unzip $DOWNLOADS/switss.zip
+    # TODO: rename after switch to original SWITSS repo
+    mv switss-paynt-integration switss
     cd -
 }
 
@@ -51,7 +56,7 @@ python-environment() {
     pip3 install virtualenv
     virtualenv -p python3 $SYNTHESIS_ENV
     enva
-    pip3 install pytest pytest-runner pytest-cov numpy scipy pysmt z3-solver click
+    pip3 install pytest pytest-runner pytest-cov numpy scipy pysmt z3-solver click toml
     pip3 install Cython scikit-build
     envd
 }
@@ -85,6 +90,17 @@ prerequisites-build-cvc5() {
     envd
     cd -
 }
+
+prerequisites-build-switss() {
+    # configuration
+    cd $PREREQUISITES/switss
+    enva
+    pip3 install -r requirements.txt
+    python3 setup.py install
+    envd
+    cd -
+}
+
 
 storm-dependencies() {
     sudo apt update
@@ -177,6 +193,8 @@ synthesis-install() {
     prerequisites-build-pycarl
     # build cvc5 (optional)
     prerequisites-build-cvc5
+    # build switss
+    prerequisites-build-switss
 
     # configure storm
     storm-config
