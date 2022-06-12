@@ -163,6 +163,10 @@ class SynthesizerAR(Synthesizer):
 
 class SynthesizerCEGIS(Synthesizer):
 
+    def __init__(self, ce_generator: str, *args, **kwargs):
+        self.ce_generator_type = ce_generator
+        super().__init__(*args, **kwargs)
+
     @property
     def method_name(self):
         return "CEGIS"
@@ -182,6 +186,82 @@ class SynthesizerCEGIS(Synthesizer):
             conflict_filtered.append(hole)
 
         return conflict_filtered
+
+    def analyze_family_assignment_cegis_storm(self, family, assignment, ce_generator):
+        """
+        :return (1) specification satisfiability (True/False)
+        :return (2) whether this is an improving assignment
+        """
+
+        assert family.mdp is not None, "analyzed family does not have an associated quotient MPD"
+        
+        Profiler.start("CEGIS analysis")
+        
+        # build DTMC
+        dtmc = self.sketch.quotient.build_chain(assignment)
+        self.stat.iteration_dtmc(dtmc.states)
+        
+        # model check all properties
+        spec = dtmc.check_specification(self.sketch.specification, 
+            property_indices = family.property_indices, short_evaluation = False)
+
+        # analyze model checking results
+        improving = False
+        if spec.constraints_result.all_sat:
+            if not self.sketch.specification.has_optimality:
+                Profiler.resume()
+                return True, True
+            if spec.optimality_result is not None and spec.optimality_result.improves_optimum:
+                self.sketch.specification.optimality.update_optimum(spec.optimality_result.value)
+                self.since_last_optimum_update = 0
+                improving = True
+
+        # construct conflict wrt each unsatisfiable property
+        # pack all unsatisfiable properties as well as their MDP results (if exists)
+        conflict_requests = []
+        for index in family.property_indices:
+            if spec.constraints_result.results[index].sat:
+                continue
+            prop = self.sketch.specification.constraints[index]
+            property_result = family.analysis_result.constraints_result.results[index] if family.analysis_result is not None else None
+            conflict_requests.append( (index,prop,property_result) )
+        if self.sketch.specification.has_optimality:
+            index = len(self.sketch.specification.constraints)
+            prop = self.sketch.specification.optimality
+            property_result = family.analysis_result.optimality_result if family.analysis_result is not None else None
+            conflict_requests.append( (index,prop,property_result) )
+
+        # prepare DTMC for CE generation
+        # TODO: replace
+        ce_generator.prepare_dtmc(dtmc.model, dtmc.quotient_state_map)
+
+        # construct conflict to each unsatisfiable property
+        conflicts = []
+        for request in conflict_requests:
+            index,prop,property_result = request
+
+            threshold = prop.threshold
+
+            bounds = None
+            scheduler_selection = None
+            if property_result is not None:
+                bounds = property_result.primary.result
+                scheduler_selection = property_result.primary_selection
+
+            Profiler.start("storm::construct_conflict")
+            conflict = ce_generator.construct_conflict(index, threshold, bounds, family.mdp.quotient_state_map)
+            Profiler.resume()
+            conflict = self.generalize_conflict(assignment, conflict, scheduler_selection)
+            conflicts.append(conflict)
+
+        # use conflicts to exclude the generalizations of this assignment
+        Profiler.start("holes::exclude_assignment")
+        for conflict in conflicts:
+            family.exclude_assignment(assignment, conflict)
+        Profiler.resume()
+        
+        Profiler.resume()
+        return False, improving
 
     def analyze_family_assignment_cegis(self, family, assignment, ce_generator):
         """
@@ -232,6 +312,48 @@ class SynthesizerCEGIS(Synthesizer):
 
         # construct conflict to each unsatisfiable property
         conflicts = []
+
+        from switss.model import MDP, ReachabilityForm
+        from switss.model import DTMC as SWITSS_DTMC
+        from switss.problem.qsheur import QSHeur
+
+        # print(type(self.sketch.quotient.quotient_mdp))
+
+        # options = stormpy.BuilderOptions()
+        # options.set_build_choice_labels(True)
+        # model = stormpy.build_sparse_model_with_options(self.sketch.prism,options)
+
+        # switss_mdp = MDP.from_stormpy(self.sketch.quotient.quotient_mdp, True)
+        switss_dtmc = SWITSS_DTMC.from_stormpy(dtmc.model)
+        print(dtmc.model.labeling)
+        print(dtmc.model.transition_matrix)
+        print(switss_dtmc)
+
+        N = switss_dtmc.N
+        switss_dtmc.add_label(0,"init")
+        switss_dtmc.add_label(N-2,"target1")
+        switss_dtmc.add_label(N-1,"target2")
+
+        switss_dtmc.add_label(N-2,"T")
+        switss_dtmc.add_label(N-1,"T")
+
+        print(switss_dtmc.labels_by_state)
+        switss_dtmc_rf,_,_ = ReachabilityForm.reduce(switss_dtmc, "init", "T")
+
+        qs_heur = QSHeur(solver="cbc",iterations=10)
+        results = list(qs_heur.solveiter(switss_dtmc_rf, 0.3,"max"))
+        print(results[-1])
+        print()
+        print(results[-1].subsystem.subsys.system)
+
+        # Plot the mdp and view it
+        from graphviz import Source
+        # s = Source(str(results[0].subsystem.subsys.system.digraph()), filename="test.gv", format="png")
+        s = Source(str(results[-1].subsystem.subsys.system.digraph()), filename="test.gv", format="png")
+        s.view()
+        exit()
+
+
         for request in conflict_requests:
             index,prop,property_result = request
 
@@ -276,6 +398,50 @@ class SynthesizerCEGIS(Synthesizer):
         # build the quotient, map mdp states to hole indices
         self.sketch.quotient.build(family)
         self.sketch.quotient.compute_state_to_holes()
+
+
+        from switss.model import MDP, DTMC, ReachabilityForm
+        from switss.problem.qsheur import QSHeur
+        from switss.problem import MILPExact
+
+        # switss_mdp = MDP.from_stormpy(self.sketch.quotient.quotient_mdp)
+        # # states_by_label = switss_mdp.states_by_label
+        # print(switss_mdp.states_by_label)
+
+        # switss_mdp_rf,_,_ = ReachabilityForm.reduce(switss_mdp, "init", "((s = 2) | (s = 1))")
+        # qs_heur = QSHeur(solver="cbc",iterations=5)
+        # milp = MILPExact(solver="cbc")
+        # results = list(qs_heur.solveiter(switss_mdp_rf, 0.1,"min"))
+        
+        # results = dict()
+        # results["min"] = dict()
+        # results["max"] = dict()
+
+        # for thr in [0.1, 0.2, 0.5, 0.9]:
+        #     # "min" or "max" can both be used for DTMCs, but the underlying algorihtms are different and may produce different subsystems
+        #     for mode in ["min","max"]:
+
+        #         print("running heuristic for threshold: " + str(thr) + "and mode:" + str(mode))
+
+        #         # the last iteration should contain the best subsystem
+        #         # in general, solveiter produces a list of results which all induce valid witnesses
+        #         res = list(qs_heur.solveiter(switss_mdp_rf, thr, mode))[-1]
+            
+        #         # "value" indicates how many labels where "hit"
+        #         results[mode][thr] = res
+
+        # print(results[0].subsystem.subsys.system)
+
+
+        # # Plot the mdp and view it
+        # from graphviz import Source
+        # # s = Source(str(results[0].subsystem.subsys.system.digraph()), filename="test.gv", format="png")
+        # s = Source(str(switss_mdp_rf.system.digraph()), filename="test.gv", format="png")
+        # s.view()
+
+
+
+
         quotient_relevant_holes = self.sketch.quotient.state_to_holes
 
         # initialize CE generator
@@ -283,6 +449,9 @@ class SynthesizerCEGIS(Synthesizer):
         ce_generator = stormpy.synthesis.CounterexampleGenerator(
             self.sketch.quotient.quotient_mdp, self.sketch.design_space.num_holes,
             quotient_relevant_holes, formulae)
+
+        print(quotient_relevant_holes)
+        exit()
 
         # use sketch design space as a SAT baseline
         self.sketch.design_space.sat_initialize()

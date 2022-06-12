@@ -50,9 +50,15 @@ def setup_logger(log_path = None):
 
 @click.option("--fsc-synthesis", is_flag=True, default=False, help="enable incremental synthesis of FSCs for a POMDP")
 @click.option("--pomdp-memory-size", default=1, help="implicit memory size for POMDP FSCs")
-
+@click.option(
+    "--ce-generator",
+    default="storm",
+    type=click.Choice(["storm", "switss"]),
+    show_default=True,
+    help="Counter example generator",
+)
 def paynt(
-        project, sketch, properties, constants, method, export_jani, incomplete_search, fsc_synthesis, pomdp_memory_size, 
+        project, sketch, properties, constants, method, export_jani, incomplete_search, fsc_synthesis, pomdp_memory_size, ce_generator,
 ):
     logger.info("This is Paynt version {}.".format(version()))
 
@@ -73,7 +79,7 @@ def paynt(
     elif method == "onebyone":
         synthesizer = Synthesizer1By1(sketch)
     elif method == "cegis":
-        synthesizer = SynthesizerCEGIS(sketch)
+        synthesizer = SynthesizerCEGIS(sketch=sketch, ce_generator=ce_generator)
     elif method == "ar":
         synthesizer = SynthesizerAR(sketch)
     elif method == "hybrid":
