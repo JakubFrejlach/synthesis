@@ -5,6 +5,8 @@ from ..quotient.smt import SmtSolver
 from .conflict_generator.storm import ConflictGeneratorStorm
 from .conflict_generator.switss import ConflictGeneratorSwitss
 from .conflict_generator.mdp import ConflictGeneratorMdp
+from .conflict_generator.benchmark import ConflictGeneratorBenchmark
+from paynt.utils.profiler import Timer
 
 import logging
 logger = logging.getLogger(__name__)
@@ -19,11 +21,16 @@ class SynthesizerCEGIS(Synthesizer):
         super().__init__(quotient)
 
         self.conflict_generator = self.choose_conflict_generator(quotient)
+        self.synthesis_timer = Timer()
+        self.terminated = False
 
         # assert that no reward formula is maximizing
         assert not self.quotient.specification.contains_maximizing_reward_properties, \
             "Cannot use CEGIS for maximizing reward formulae -- consider using AR or hybrid methods."
 
+    def run(self):
+        self.synthesis_timer.start()
+        super().run()
     
     def choose_conflict_generator(self, quotient):
         if SynthesizerCEGIS.conflict_generator_type == "storm":
@@ -32,6 +39,8 @@ class SynthesizerCEGIS(Synthesizer):
             conflict_generator = ConflictGeneratorSwitss(quotient)
         elif SynthesizerCEGIS.conflict_generator_type == "mdp":
             conflict_generator = ConflictGeneratorMdp(quotient)
+        elif SynthesizerCEGIS.conflict_generator_type == "benchmark":
+            conflict_generator = ConflictGeneratorBenchmark(quotient)
         else:
             pass # left intentionally blank
         return conflict_generator
@@ -130,6 +139,10 @@ class SynthesizerCEGIS(Synthesizer):
         assignment = smt_solver.pick_assignment(family)
         while assignment is not None:
             
+            if self.synthesis_timer.read() > 600:
+                self.terminated = True
+                return None
+
             conflicts, accepting_assignment = self.analyze_family_assignment_cegis(family, assignment)
             if accepting_assignment is not None:
                 satisfying_assignment = accepting_assignment

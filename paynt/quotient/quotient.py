@@ -91,6 +91,12 @@ class QuotientContainer:
         dtmc = stormpy.storage.SparseDtmc(components)
         return dtmc
 
+    @staticmethod
+    def dtmc_to_mdp(dtmc):
+        tm = dtmc.transition_matrix
+        components = stormpy.storage.SparseModelComponents(tm, dtmc.labeling, dtmc.reward_models)
+        mdp = stormpy.storage.SparseMdp(components)
+        return mdp
     
     def build_chain(self, family):
         assert family.size == 1

@@ -118,7 +118,7 @@ def setup_logger(log_path = None):
 @click.option(
     "--ce-generator",
     default="storm",
-    type=click.Choice(["storm", "switss", "mdp"]),
+    type=click.Choice(["storm", "switss", "mdp", "benchmark"]),
     show_default=True,
     help="counterexample generator",
 )
@@ -126,6 +126,8 @@ def setup_logger(log_path = None):
     help="run POMCP")
 @click.option("--profiling", is_flag=True, default=False,
     help="run profiling")
+@click.option("--benchmarking", is_flag=True, default=False,
+    help="run benchmarking")
 
 def paynt(
         project, sketch, props, constants, relative_error,
@@ -138,7 +140,8 @@ def paynt(
         use_storm_cutoffs, unfold_strategy_storm,
         ce_generator,
         pomcp,
-        profiling
+        profiling,
+        benchmarking,
 ):
     logger.info("This is Paynt version {}.".format(version()))
 
@@ -183,7 +186,7 @@ def paynt(
             print(stats)
             pstats.Stats(pr).sort_stats('tottime').print_stats(10)
         exit()
-        
+
     # choose the synthesis method and run the corresponding synthesizer
     if isinstance(quotient, POMDPQuotientContainer) and fsc_synthesis:
         synthesizer = SynthesizerPOMDP(quotient, method, storm_control)
@@ -216,6 +219,41 @@ def paynt(
         stats = pr.create_stats()
         print(stats)
         pstats.Stats(pr).sort_stats('tottime').print_stats(10)
+
+    if benchmarking:
+        import csv
+        benchmarking_filename = "benchmarking/mdp_vs_dtmc_vs_switss_single_property.csv"
+        spec = synthesizer.stat.quotient.specification
+        file_exists = os.path.isfile(benchmarking_filename)
+        with open(benchmarking_filename, "a") as csv_file:
+            field_names = [
+                "model",
+                "property",
+                "terminated",
+                "mdp_avg_conflict_size",
+                "dtmc_avg_conflict_size",
+                "switss_avg_conflict_size",
+                "mdp_total_time",
+                "dtmc_total_time",
+                "switss_total_time",
+                "mdp_avg_time_per_conflict",
+                "dtmc_avg_time_per_conflict",
+                "switss_avg_time_per_conflict",
+            ]
+            writer = csv.DictWriter(csv_file, fieldnames=field_names)
+
+            if not file_exists:
+                writer.writeheader()
+
+            conflict_stats = synthesizer.conflict_generator.get_conflict_stats()
+            writer.writerow(
+                {
+                    "model": project.replace("/", "_"),
+                    "property": spec.constraints[0] if spec.constraints else spec.optimality,
+                    "terminated": getattr(synthesizer, "terminated", None),
+                    **conflict_stats
+                }
+            )
 
 
 def main():
