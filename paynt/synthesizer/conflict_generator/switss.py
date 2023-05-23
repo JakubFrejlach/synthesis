@@ -1,10 +1,10 @@
-# import switss stuff if installed
 import importlib
 
 import stormpy
 
 from .storm import ConflictGeneratorStorm
 
+# import SWITSS utilities and models if installed
 if importlib.util.find_spec("switss") is not None:
     from switss.model import ReachabilityForm
     from switss.model import MDP as SWITSS_MDP
@@ -13,7 +13,6 @@ if importlib.util.find_spec("switss") is not None:
 
 import logging
 
-from opcode import hasconst
 from scipy.sparse import dok_matrix
 
 from paynt.quotient.property import OptimalityProperty
@@ -36,6 +35,8 @@ class ConflictGeneratorSwitss(ConflictGeneratorStorm):
     def construct_conflict_mdp(
         self, family, assignment, dtmc, conflict_requests, accepting_assignment
     ):
+        # generalize simple holes, i.e. starting from the full family, fix each
+        # non-simple hole to the option selected by the assignment
         subfamily = family.copy()
         simple_holes = [
             hole_index
@@ -71,20 +72,22 @@ class ConflictGeneratorSwitss(ConflictGeneratorStorm):
                 )
 
         if prop.minimizing:
-            # safety
+            # safety property
             threshold = prop.threshold
             subformula = prop.property.raw_formula.subformula.subformula
+
+            # identify target label
             if isinstance(subformula, stormpy.logic.AtomicLabelFormula):
                 target_label = subformula.label
             else:
                 assert isinstance(subformula, stormpy.logic.AtomicExpressionFormula)
                 target_label = str(subformula)
         else:
-            # liveness: flip threshold
+            # liveness property - flip threshold, new target label
             threshold = 1 - prop.threshold
             target_label = "target"
 
-        # construct a labeled SWITSS DTMC
+        # construct a labeled SWITSS MDP
         switss_mdp = SWITSS_MDP.from_stormpy(submdp.model)
         for i, state in enumerate(submdp.model.states):
             # copy labels
@@ -92,27 +95,23 @@ class ConflictGeneratorSwitss(ConflictGeneratorStorm):
                 switss_mdp.add_label(i, label)
 
         # label states by relevant holes id
-
         for submdp_state in range(submdp.states):
             mdp_state = submdp.quotient_state_map[submdp_state]
             for hole in submdp.quotient_container.coloring.state_to_holes[mdp_state]:
                 switss_mdp.add_label(submdp_state, str(hole))
 
         if prop.minimizing:
+            # safety property
+            # construct a witnessing subsystem - CE
             switss_mdp_rf, _, _ = ReachabilityForm.reduce(
                 switss_mdp, "init", target_label
             )
             results = list(
                 self.counterexample_generator.solveiter(
-                    switss_mdp_rf, threshold, "max", ignore_consistency_checks=True
+                    switss_mdp_rf, threshold, "min", ignore_consistency_checks=True
                 )
             )
             witnessing_subsystem = results[-1].subsystem.subsys.system
-            # FIXME: implement unreachable states removal in MDP in SWITSS
-            # witnessing_subsystem = SWITSS_DTMC.remove_unreachable_states(
-            #     witnessing_subsystem, init_label="init"
-            # )
-
             conflict = set(
                 [
                     int(label)
@@ -122,14 +121,17 @@ class ConflictGeneratorSwitss(ConflictGeneratorStorm):
             )
             conflict = list(conflict)
         else:
+            # liveness property
+
             no_states = switss_mdp.N
-            # compute all bottom SCCs
+            # compute maximal end components
             (
                 scc_arr,
                 proper_scc_mask,
                 no_of_sccs,
             ) = switss_mdp.maximal_end_components()
 
+            # get the total number of actions in MDP for transition matrix construction
             total_actions = 0
             total_actions += len([i for i in proper_scc_mask if i])
             for state in range(no_states):
@@ -140,9 +142,10 @@ class ConflictGeneratorSwitss(ConflictGeneratorStorm):
             new_transation_matrix = dok_matrix((total_actions, no_of_sccs))
 
             labels = {"init": {scc_arr[0]}, "target": set()}
-
             i = 0
             new_index_by_state_action = {}
+
+            # collapse states according to computed maximal end components
             for state, action in switss_mdp.index_by_state_action:
                 state_scc = scc_arr[state]
 
@@ -169,35 +172,37 @@ class ConflictGeneratorSwitss(ConflictGeneratorStorm):
                     new_index_by_state_action[(state_scc, action)] = i
                     i += 1
 
+            # construct the transformed MDP according to collapsed maximal end components
             transformed_switss_mdp = SWITSS_MDP(
                 new_transation_matrix,
                 new_index_by_state_action,
                 label_to_states=labels,
             )
+
+            # construct witnessing subsystem - CE
             switss_mdp_rf, _, _ = ReachabilityForm.reduce(
                 transformed_switss_mdp, "init", target_label
             )
             results = list(
                 self.counterexample_generator.solveiter(
-                    switss_mdp_rf, threshold, "max", ignore_consistency_checks=True
+                    switss_mdp_rf, threshold, "min", ignore_consistency_checks=True
                 )
             )
             witnessing_subsystem = results[-1].subsystem.subsys.system
-            # FIXME: implement unreachable states removal in MDP in SWITSS
-            # witnessing_subsystem = SWITSS_DTMC.remove_unreachable_states(
-            #     witnessing_subsystem, init_label="init"
-            # )
 
+            # gather conflicts based on the hole labels
             conflict = set()
             for state_label in witnessing_subsystem.states_by_label.keys():
                 if state_label.isnumeric():
                     conflict |= switss_mdp.labels_by_state[int(state_label)]
             conflict = [int(hole_id) for hole_id in conflict if hole_id.isnumeric()]
-        return conflict
+
+        # exclude simple holes from the conflict
+        return list(set(conflict) - set(simple_holes))
 
     def construct_conflict_dtmc(self, dtmc, prop):
         if prop.minimizing:
-            # safety
+            # safety property
             threshold = prop.threshold
             subformula = prop.property.raw_formula.subformula.subformula
             if isinstance(subformula, stormpy.logic.AtomicLabelFormula):
@@ -206,7 +211,7 @@ class ConflictGeneratorSwitss(ConflictGeneratorStorm):
                 assert isinstance(subformula, stormpy.logic.AtomicExpressionFormula)
                 target_label = str(subformula)
         else:
-            # liveness: flip threshold
+            # liveness property - flip treshold, new target label
             threshold = 1 - prop.threshold
             target_label = "target"
 
@@ -224,6 +229,10 @@ class ConflictGeneratorSwitss(ConflictGeneratorStorm):
                 switss_dtmc.add_label(dtmc_state, str(hole))
 
         if prop.minimizing:
+            # safety property
+            # construct
+
+            # construct a witnessing subsystem - CE
             switss_dtmc_rf, _, _ = ReachabilityForm.reduce(
                 switss_dtmc, "init", target_label
             )
@@ -246,6 +255,8 @@ class ConflictGeneratorSwitss(ConflictGeneratorStorm):
             )
             conflict = list(conflict)
         else:
+            # liveness property
+
             no_states = switss_dtmc.N
 
             # compute all bottom SCCs
@@ -275,9 +286,12 @@ class ConflictGeneratorSwitss(ConflictGeneratorStorm):
                         j_scc = scc_arr[j]
                         new_transation_matrix[i_scc, j_scc] += switss_dtmc.P[i, j]
 
+            # construct the transformed MDP according to collapsed BSCCs
             transformed_switss_dtmc = SWITSS_DTMC(
                 new_transation_matrix, label_to_states=labels
             )
+
+            # construct a witnessing subsystem - CE
             switss_dtmc_rf, _, _ = ReachabilityForm.reduce(
                 transformed_switss_dtmc, "init", target_label
             )
@@ -291,6 +305,7 @@ class ConflictGeneratorSwitss(ConflictGeneratorStorm):
                 witnessing_subsystem, init_label="init"
             )
 
+            # gather conflicts based on the hole labels
             conflict = set()
             for state_label in witnessing_subsystem.states_by_label.keys():
                 if state_label.isnumeric():
@@ -312,42 +327,6 @@ class ConflictGeneratorSwitss(ConflictGeneratorStorm):
             assert not request[
                 1
             ].reward, "we don't know how to handle reward properties in this mode, conside CEGIS in another mode"
-
-        # # generalize simple holes, i.e. starting from the full family, fix each
-        # # non-simple hole to the option selected by the assignment
-        # subfamily = family.copy()
-        # simple_holes = [
-        #     hole_index
-        #     for hole_index in subfamily.hole_indices
-        #     if family.mdp.hole_simple[hole_index]
-        # ]
-        # non_simple_holes = [
-        #     hole_index
-        #     for hole_index in subfamily.hole_indices
-        #     if not family.mdp.hole_simple[hole_index]
-        # ]
-        # for hole_index in non_simple_holes:
-        #     subfamily.assume_hole_options(hole_index, assignment[hole_index].options)
-        # self.quotient.build(subfamily)
-        # submdp = subfamily.mdp
-
-        # index, prop, _, family_result = conflict_requests[0]
-
-        # # check primary direction
-        # primary = submdp.model_check_property(prop)
-        # if primary.sat:
-        #     # found satisfying assignment
-        #     selection, _, _, _, consistent = self.quotient.scheduler_consistent(
-        #         submdp, prop, primary.result
-        #     )
-        #     assert consistent
-        #     if isinstance(prop, OptimalityProperty):
-        #         self.quotient.specification.optimality.update_optimum(primary.value)
-        #     accepting_assignment = family.copy()
-        #     for hole_index in family.hole_indices:
-        #         accepting_assignment.assume_hole_options(
-        #             hole_index, selection[hole_index]
-        #         )
 
         conflicts = []
         for request in conflict_requests:

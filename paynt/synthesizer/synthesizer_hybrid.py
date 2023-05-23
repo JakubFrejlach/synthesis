@@ -30,7 +30,7 @@ class StageControl:
         # multiplier to derive time allocated for cegis
         # time_ar * factor = time_cegis
         # =1 is fair, >1 favours cegis, <1 favours ar
-        self.cegis_efficiency = 1
+        self.cegis_efficiency = 2
 
     def start_ar(self):
         self.timer_cegis.stop()
@@ -70,7 +70,7 @@ class SynthesizerHybrid(SynthesizerAR, SynthesizerCEGIS):
 
     def synthesize_assignment(self, family):
 
-        self.conflict_generator.initialize()
+        self.conflict_generator.initialize(self.simple_holes_stats)
         smt_solver = SmtSolver(self.quotient.design_space)
 
         # AR-CEGIS loop
@@ -108,6 +108,11 @@ class SynthesizerHybrid(SynthesizerAR, SynthesizerCEGIS):
             # explore family assignments
             family_explored = False
             while True:
+
+                # Terminate Hybrid if timeout is set and surpassed
+                if self.timeout is not None and self.synthesis_timer.read() > self.timeout:
+                    self.terminated = True
+                    return None
 
                 if not self.stage_control.cegis_has_time():
                     break   # CEGIS timeout

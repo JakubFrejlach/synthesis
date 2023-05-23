@@ -1,41 +1,42 @@
-from . import version
+import cProfile
+import csv
+import json
+import logging
+import os
+import pstats
+import sys
 
-from .parser.sketch import Sketch
-from .quotient.quotient_pomdp import POMDPQuotientContainer
-
-from .synthesizer.synthesizer import Synthesizer
-from .synthesizer.synthesizer_onebyone import SynthesizerOneByOne
-from .synthesizer.synthesizer_ar import SynthesizerAR
-from .synthesizer.synthesizer_cegis import SynthesizerCEGIS
-from .synthesizer.synthesizer_hybrid import SynthesizerHybrid
-from .synthesizer.synthesizer_pomdp import SynthesizerPOMDP
-from .synthesizer.synthesizer_multicore_ar import SynthesizerMultiCoreAR
-
-from .quotient.storm_pomdp_control import StormPOMDPControl
-
-from .utils.storm_parallel import ParallelControl
 # TODO remove?
 from multiprocessing import Manager
 from multiprocessing.managers import BaseManager
 
 import click
-import sys
-import os
-import cProfile, pstats
 
-import logging
+from . import version
+from .parser.sketch import Sketch
+from .quotient.quotient_pomdp import POMDPQuotientContainer
+from .quotient.storm_pomdp_control import StormPOMDPControl
+from .synthesizer.synthesizer import Synthesizer
+from .synthesizer.synthesizer_ar import SynthesizerAR
+from .synthesizer.synthesizer_cegis import SynthesizerCEGIS
+from .synthesizer.synthesizer_hybrid import SynthesizerHybrid
+from .synthesizer.synthesizer_multicore_ar import SynthesizerMultiCoreAR
+from .synthesizer.synthesizer_onebyone import SynthesizerOneByOne
+from .synthesizer.synthesizer_pomdp import SynthesizerPOMDP
+from .utils.storm_parallel import ParallelControl
+
 logger = logging.getLogger(__name__)
 
 
-def setup_logger(log_path = None):
-    ''' Setup routine for logging. '''
-    
+def setup_logger(log_path=None):
+    """Setup routine for logging."""
+
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
     # root.setLevel(logging.INFO)
 
     # formatter = logging.Formatter('%(asctime)s %(threadName)s - %(name)s - %(levelname)s - %(message)s')
-    formatter = logging.Formatter('%(asctime)s - %(filename)s - %(message)s')
+    formatter = logging.Formatter("%(asctime)s - %(filename)s - %(message)s")
 
     handlers = []
     if log_path is not None:
@@ -53,95 +54,193 @@ def setup_logger(log_path = None):
 
 
 @click.command()
-@click.option("--project", required=True, type=click.Path(exists=True),
-    help="project path")
-@click.option("--sketch", default="sketch.templ", show_default=True,
-    help="name of the sketch file in the project")
-@click.option("--props", default="sketch.props", show_default=True,
-    help="name of the properties file in the project")
+@click.option(
+    "--project", required=True, type=click.Path(exists=True), help="project path"
+)
+@click.option(
+    "--sketch",
+    default="sketch.templ",
+    show_default=True,
+    help="name of the sketch file in the project",
+)
+@click.option(
+    "--props",
+    default="sketch.props",
+    show_default=True,
+    help="name of the properties file in the project",
+)
 @click.option("--constants", default="", help="constant assignment string")
-@click.option("--relative-error", type=click.FLOAT, default="0", show_default=True,
-    help="relative error for optimal synthesis")
-
-@click.option("--filetype",
-    type=click.Choice(['prism', 'drn', 'cassandra']),
-    default="prism", show_default=True,
-    help="input file format")
-@click.option("--export",
-    type=click.Choice(['drn', 'pomdp']),
-    help="export the model to *.drn/*.pomdp and abort")
-
-@click.option("--method",
-    type=click.Choice(['onebyone', 'ar', 'cegis', 'hybrid', 'ar_multicore']),
-    default="ar", show_default=True,
-    help="synthesis method"
-    )
-
-@click.option("--incomplete-search", is_flag=True, default=False,
-    help="use incomplete search during synthesis")
-
-@click.option("--fsc-synthesis", is_flag=True, default=False,
-    help="enable incremental synthesis of FSCs for a POMDP")
-@click.option("--pomdp-memory-size", default=1, show_default=True,
-    help="implicit memory size for POMDP FSCs")
-@click.option("--posterior-aware", is_flag=True, default=False,
-    help="unfold MDP taking posterior observation of into account")
-@click.option("--fsc-export-result", is_flag=True, default=False,
-    help="export the input POMDP as well as the (labeled) optimal DTMC into a .drn format")
-
-@click.option("--storm-pomdp", is_flag=True, default=False,
-    help="enable running storm analysis for POMDPs to enhance FSC synthesis (supports AR only for now!)")
+@click.option(
+    "--relative-error",
+    type=click.FLOAT,
+    default="0",
+    show_default=True,
+    help="relative error for optimal synthesis",
+)
+@click.option(
+    "--filetype",
+    type=click.Choice(["prism", "drn", "cassandra"]),
+    default="prism",
+    show_default=True,
+    help="input file format",
+)
+@click.option(
+    "--export",
+    type=click.Choice(["drn", "pomdp"]),
+    help="export the model to *.drn/*.pomdp and abort",
+)
+@click.option(
+    "--method",
+    type=click.Choice(["onebyone", "ar", "cegis", "hybrid", "ar_multicore"]),
+    default="ar",
+    show_default=True,
+    help="synthesis method",
+)
+@click.option(
+    "--incomplete-search",
+    is_flag=True,
+    default=False,
+    help="use incomplete search during synthesis",
+)
+@click.option(
+    "--fsc-synthesis",
+    is_flag=True,
+    default=False,
+    help="enable incremental synthesis of FSCs for a POMDP",
+)
+@click.option(
+    "--pomdp-memory-size",
+    default=1,
+    show_default=True,
+    help="implicit memory size for POMDP FSCs",
+)
+@click.option(
+    "--posterior-aware",
+    is_flag=True,
+    default=False,
+    help="unfold MDP taking posterior observation of into account",
+)
+@click.option(
+    "--fsc-export-result",
+    is_flag=True,
+    default=False,
+    help="export the input POMDP as well as the (labeled) optimal DTMC into a .drn format",
+)
+@click.option(
+    "--storm-pomdp",
+    is_flag=True,
+    default=False,
+    help="enable running storm analysis for POMDPs to enhance FSC synthesis (supports AR only for now!)",
+)
 @click.option(
     "--storm-options",
     default="cutoff",
-    type=click.Choice(["cutoff", "clip2", "clip4", "small", "refine", "overapp", "2mil", "5mil", "10mil", "20mil", "30mil", "50mil"]),
+    type=click.Choice(
+        [
+            "cutoff",
+            "clip2",
+            "clip4",
+            "small",
+            "refine",
+            "overapp",
+            "2mil",
+            "5mil",
+            "10mil",
+            "20mil",
+            "30mil",
+            "50mil",
+        ]
+    ),
     show_default=True,
-    help="run Storm using pre-defined settings and use the result to enhance PAYNT. Can only be used together with --storm-pomdp flag")
-@click.option("--iterative-storm", nargs=3, type=int, show_default=True, default=None,
-    help="runs the iterative PAYNT/Storm integration. Arguments timeout, paynt_timeout, storm_timeout. Can only be used together with --storm-pomdp flag")
-@click.option("--get-storm-result", default=None, type=int,
-    help="runs PAYNT for given amount of seconds and returns Storm result using FSC at cutoff. If time is 0 returns pure Storm result. Can only be used together with --storm-pomdp flag")
-@click.option("--prune-storm", is_flag=True, default=False,
-    help="only explore the main family suggested by Storm in each iteration. Can only be used together with --storm-pomdp flag. Can only be used together with --storm-pomdp flag")
-@click.option("--use-storm-cutoffs", is_flag=True, default=False,
-    help="if set the storm randomized scheduler cutoffs are used during the prioritization of families. Can only be used together with --storm-pomdp flag. Can only be used together with --storm-pomdp flag")
+    help="run Storm using pre-defined settings and use the result to enhance PAYNT. Can only be used together with --storm-pomdp flag",
+)
+@click.option(
+    "--iterative-storm",
+    nargs=3,
+    type=int,
+    show_default=True,
+    default=None,
+    help="runs the iterative PAYNT/Storm integration. Arguments timeout, paynt_timeout, storm_timeout. Can only be used together with --storm-pomdp flag",
+)
+@click.option(
+    "--get-storm-result",
+    default=None,
+    type=int,
+    help="runs PAYNT for given amount of seconds and returns Storm result using FSC at cutoff. If time is 0 returns pure Storm result. Can only be used together with --storm-pomdp flag",
+)
+@click.option(
+    "--prune-storm",
+    is_flag=True,
+    default=False,
+    help="only explore the main family suggested by Storm in each iteration. Can only be used together with --storm-pomdp flag. Can only be used together with --storm-pomdp flag",
+)
+@click.option(
+    "--use-storm-cutoffs",
+    is_flag=True,
+    default=False,
+    help="if set the storm randomized scheduler cutoffs are used during the prioritization of families. Can only be used together with --storm-pomdp flag. Can only be used together with --storm-pomdp flag",
+)
 @click.option(
     "--unfold-strategy-storm",
     default="storm",
     type=click.Choice(["storm", "paynt", "cutoff"]),
     show_default=True,
-    help="specify memory unfold strategy. Can only be used together with --storm-pomdp flag")
+    help="specify memory unfold strategy. Can only be used together with --storm-pomdp flag",
+)
 
-#@click.option("--storm-parallel", is_flag=True, default=False,
+# @click.option("--storm-parallel", is_flag=True, default=False,
 #    help="run storm analysis in parallel (can only be used together with --storm-pomdp-analysis flag)")
+
 
 @click.option(
     "--ce-generator",
     default="storm",
-    type=click.Choice(["storm", "switss", "mdp", "benchmark"]),
+    type=click.Choice(
+        [
+            "storm",
+            "switss-mdp",
+            "switss-dtmc",
+            "mdp",
+            "mdp-randomised",
+            "mdp-holes-positions",
+            "mdp-simple-holes-stats",
+        ]
+    ),
     show_default=True,
     help="counterexample generator",
 )
-@click.option("--pomcp", is_flag=True, default=False,
-    help="run POMCP")
-@click.option("--profiling", is_flag=True, default=False,
-    help="run profiling")
-@click.option("--benchmarking", is_flag=True, default=False,
-    help="run benchmarking")
-
+@click.option("--pomcp", is_flag=True, default=False, help="run POMCP")
+@click.option("--profiling", is_flag=True, default=False, help="run profiling")
+@click.option("--benchmarking", help="run benchmarking")
+@click.option("--simple-holes-stats-file", help="use simple holes stats file")
+@click.option("--timeout", type=int, help="timeout in seconds")
 def paynt(
-        project, sketch, props, constants, relative_error,
-        filetype, export,
-        method,
-        incomplete_search,
-        fsc_synthesis, pomdp_memory_size, posterior_aware,
-        fsc_export_result,
-        storm_pomdp, iterative_storm, get_storm_result, storm_options, prune_storm,
-        use_storm_cutoffs, unfold_strategy_storm,
-        ce_generator,
-        pomcp,
-        profiling,
-        benchmarking,
+    project,
+    sketch,
+    props,
+    constants,
+    relative_error,
+    filetype,
+    export,
+    method,
+    incomplete_search,
+    fsc_synthesis,
+    pomdp_memory_size,
+    posterior_aware,
+    fsc_export_result,
+    storm_pomdp,
+    iterative_storm,
+    get_storm_result,
+    storm_options,
+    prune_storm,
+    use_storm_cutoffs,
+    unfold_strategy_storm,
+    ce_generator,
+    pomcp,
+    profiling,
+    benchmarking,
+    simple_holes_stats_file,
+    timeout,
 ):
     logger.info("This is Paynt version {}.".format(version()))
 
@@ -157,11 +256,12 @@ def paynt(
     properties_path = os.path.join(project, props)
     if not os.path.isfile(sketch_path):
         raise ValueError(f"the sketch file {sketch_path} does not exist")
-    if not filetype=="cassandra" and not os.path.isfile(properties_path):
+    if not filetype == "cassandra" and not os.path.isfile(properties_path):
         raise ValueError(f"the properties file {properties_path} does not exist")
 
-    quotient = Sketch.load_sketch(sketch_path, filetype, export,
-        properties_path, constants, relative_error)
+    quotient = Sketch.load_sketch(
+        sketch_path, filetype, export, properties_path, constants, relative_error
+    )
 
     if storm_pomdp:
         storm_control = StormPOMDPControl()
@@ -169,7 +269,11 @@ def paynt(
         if get_storm_result is not None:
             storm_control.get_result = get_storm_result
         if iterative_storm is not None:
-            storm_control.iteration_timeout, storm_control.paynt_timeout, storm_control.storm_timeout = iterative_storm
+            (
+                storm_control.iteration_timeout,
+                storm_control.paynt_timeout,
+                storm_control.storm_timeout,
+            ) = iterative_storm
         storm_control.use_cutoffs = use_storm_cutoffs
         storm_control.unfold_strategy_storm = unfold_strategy_storm
     else:
@@ -177,6 +281,7 @@ def paynt(
 
     if pomcp:
         from paynt.simulation.pomcp import POMCP
+
         if not profiling:
             POMCP(quotient).run()
         else:
@@ -184,8 +289,14 @@ def paynt(
                 POMCP(quotient).run()
             stats = pr.create_stats()
             print(stats)
-            pstats.Stats(pr).sort_stats('tottime').print_stats(10)
+            pstats.Stats(pr).sort_stats("tottime").print_stats(10)
         exit()
+
+    # load simple holes states if possible and enabled
+    simple_holes_stats = {}
+    if simple_holes_stats_file:
+        with open(simple_holes_stats_file, "r") as fp:
+            simple_holes_stats = json.load(fp)
 
     # choose the synthesis method and run the corresponding synthesizer
     if isinstance(quotient, POMDPQuotientContainer) and fsc_synthesis:
@@ -195,7 +306,9 @@ def paynt(
     elif method == "ar":
         synthesizer = SynthesizerAR(quotient)
     elif method == "cegis":
-        synthesizer = SynthesizerCEGIS(quotient)
+        synthesizer = SynthesizerCEGIS(
+            quotient, timeout, simple_holes_stats=simple_holes_stats
+        )
     elif method == "hybrid":
         synthesizer = SynthesizerHybrid(quotient)
     elif method == "ar_multicore":
@@ -218,11 +331,17 @@ def paynt(
             synthesizer.run()
         stats = pr.create_stats()
         print(stats)
-        pstats.Stats(pr).sort_stats('tottime').print_stats(10)
+        pstats.Stats(pr).sort_stats("tottime").print_stats(10)
 
-    if benchmarking:
-        import csv
-        benchmarking_filename = "benchmarking/mdp_vs_dtmc_vs_switss_single_property.csv"
+    # Benchmarking options for MDP CEs experiments
+    if benchmarking == "dtmc_simple_holes_collect":
+        benchmarking_filename = (
+            f"benchmarking/simple_holes_in_conflict/{project.replace('/', '_')}"
+        )
+        with open(benchmarking_filename, "w") as fp:
+            fp.write(json.dumps(synthesizer.conflict_generator.simple_holes_stats))
+    elif benchmarking == "classic":
+        benchmarking_filename = "benchmarking/mdp_dtmc_combined.csv"
         spec = synthesizer.stat.quotient.specification
         file_exists = os.path.isfile(benchmarking_filename)
         with open(benchmarking_filename, "a") as csv_file:
@@ -230,28 +349,28 @@ def paynt(
                 "model",
                 "property",
                 "terminated",
-                "mdp_avg_conflict_size",
-                "dtmc_avg_conflict_size",
-                "switss_avg_conflict_size",
-                "mdp_total_time",
-                "dtmc_total_time",
-                "switss_total_time",
-                "mdp_avg_time_per_conflict",
-                "dtmc_avg_time_per_conflict",
-                "switss_avg_time_per_conflict",
+                "conflict_type",
+                "result",
+                "elapsed",
             ]
             writer = csv.DictWriter(csv_file, fieldnames=field_names)
 
             if not file_exists:
                 writer.writeheader()
 
-            conflict_stats = synthesizer.conflict_generator.get_conflict_stats()
+            feasible = "yes" if synthesizer.stat.feasible else "no"
             writer.writerow(
                 {
                     "model": project.replace("/", "_"),
-                    "property": spec.constraints[0] if spec.constraints else spec.optimality,
+                    "property": spec.constraints[0]
+                    if spec.constraints
+                    else spec.optimality,
                     "terminated": getattr(synthesizer, "terminated", None),
-                    **conflict_stats
+                    "conflict_type": f"{ce_generator} - randomized with position",
+                    "result": f"feasible: {feasible}"
+                    if synthesizer.stat.optimum is None
+                    else f"optimal: {round(synthesizer.stat.optimum,6)}",
+                    "elapsed": f"{round(synthesizer.stat.synthesis_time.time, 2)}",
                 }
             )
 

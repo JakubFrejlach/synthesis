@@ -5,7 +5,6 @@ from ..quotient.smt import SmtSolver
 from .conflict_generator.storm import ConflictGeneratorStorm
 from .conflict_generator.switss import ConflictGeneratorSwitss
 from .conflict_generator.mdp import ConflictGeneratorMdp
-from .conflict_generator.benchmark import ConflictGeneratorBenchmark
 from paynt.utils.profiler import Timer
 
 import logging
@@ -17,8 +16,13 @@ class SynthesizerCEGIS(Synthesizer):
     # CLI argument selecting conflict generator
     conflict_generator_type = None
 
-    def __init__(self, quotient):
-        super().__init__(quotient)
+    def __init__(self, quotient, timeout=None, simple_holes_stats=None):
+        super().__init__(quotient, timeout=timeout)
+
+        if simple_holes_stats is None:
+            self.simple_holes_stats = {}
+        else:
+            self.simple_holes_stats = simple_holes_stats
 
         self.conflict_generator = self.choose_conflict_generator(quotient)
         self.synthesis_timer = Timer()
@@ -35,13 +39,20 @@ class SynthesizerCEGIS(Synthesizer):
     def choose_conflict_generator(self, quotient):
         if SynthesizerCEGIS.conflict_generator_type == "storm":
             conflict_generator = ConflictGeneratorStorm(quotient)
-        elif SynthesizerCEGIS.conflict_generator_type == "switss":
-            conflict_generator = ConflictGeneratorSwitss(quotient)
+        elif SynthesizerCEGIS.conflict_generator_type == "switss-mdp":
+            conflict_generator = ConflictGeneratorSwitss(quotient, mdp_ce=True)
+        elif SynthesizerCEGIS.conflict_generator_type == "switss-dtmc":
+            conflict_generator = ConflictGeneratorSwitss(quotient, mdp_ce=False)
         elif SynthesizerCEGIS.conflict_generator_type == "mdp":
             conflict_generator = ConflictGeneratorMdp(quotient)
-        elif SynthesizerCEGIS.conflict_generator_type == "benchmark":
-            conflict_generator = ConflictGeneratorBenchmark(quotient)
+        elif SynthesizerCEGIS.conflict_generator_type == "mdp-randomised":
+            conflict_generator = ConflictGeneratorMdp(quotient, variant="randomised")
+        elif SynthesizerCEGIS.conflict_generator_type == "mdp-simple-holes-stats":
+            conflict_generator = ConflictGeneratorMdp(quotient, simple_holes_stats=self.simple_holes_stats, variant="simple-holes-stats")
+        elif SynthesizerCEGIS.conflict_generator_type == "mdp-holes-positions":
+            conflict_generator = ConflictGeneratorMdp(quotient, variant="holes-positions")
         else:
+            print(SynthesizerCEGIS.conflict_generator_type)
             pass # left intentionally blank
         return conflict_generator
 
@@ -139,7 +150,8 @@ class SynthesizerCEGIS(Synthesizer):
         assignment = smt_solver.pick_assignment(family)
         while assignment is not None:
             
-            if self.synthesis_timer.read() > 600:
+            # Terminate CEGIS if timeout is set and surpassed
+            if self.timeout is not None and self.synthesis_timer.read() > self.timeout:
                 self.terminated = True
                 return None
 

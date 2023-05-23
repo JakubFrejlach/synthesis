@@ -9,8 +9,9 @@ class Synthesizer:
     # if True, some subfamilies can be discarded and some holes can be generalized
     incomplete_search = False
     
-    def __init__(self, quotient):
+    def __init__(self, quotient, timeout=None):
         self.quotient = quotient
+        self.timeout = timeout
         self.stat = Statistic(self)
         self.explored = 0
     

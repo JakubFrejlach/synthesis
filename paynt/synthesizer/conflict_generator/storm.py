@@ -24,11 +24,20 @@ class ConflictGeneratorStorm:
             formulae,
         )
 
+        # Store simple holes occurence statistics
+        self.simple_holes_stats = {}
+
     def construct_conflicts(
         self, family, assignment, dtmc, conflict_requests, accepting_assignment
     ):
 
         self.counterexample_generator.prepare_dtmc(dtmc.model, dtmc.quotient_state_map)
+
+        simple_holes = [
+            hole_index
+            for hole_index in family.hole_indices
+            if family.mdp.hole_simple[hole_index]
+        ]
 
         conflicts = []
         for request in conflict_requests:
@@ -44,6 +53,15 @@ class ConflictGeneratorStorm:
             conflict = self.counterexample_generator.construct_conflict(
                 index, threshold, bounds, family.mdp.quotient_state_map
             )
+
+            # Log occurence of each simple hole
+            for hole in conflict:
+                if hole in simple_holes:
+                    if hole not in self.simple_holes_stats:
+                        self.simple_holes_stats[hole] = 1
+                    else:
+                        self.simple_holes_stats[hole] += 1
+
             conflicts.append(conflict)
 
         return conflicts, accepting_assignment

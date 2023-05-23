@@ -101,7 +101,7 @@ class MarkovChain:
         )
 
     def model_check_formula_hint(self, formula, hint):
-        raise RuntimeError("model checking with hints is not fully supported")
+        # raise RuntimeError("model checking with hints is not fully supported")
         stormpy.synthesis.set_loglevel_off()
         task = stormpy.core.CheckTask(formula, only_initial_states=False)
         task.set_produce_schedulers(produce_schedulers=True)

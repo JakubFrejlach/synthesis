@@ -1,9 +1,9 @@
-import stormpy
-
+import logging
 import math
 import operator
 
-import logging
+import stormpy
+
 logger = logging.getLogger(__name__)
 
 class Property:
